@@ -40,12 +40,21 @@ fun CharadasApp() {
     var equipoTurno by remember { mutableStateOf<String?>(null) }
     var ronda by remember { mutableStateOf(1) }
     var mensajeFinal by remember { mutableStateOf<String?>(null) }
-    var ganador by remember { mutableStateOf<String?>(null) }
+    var finPartida by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         juego.listener = object : Game.JuegoListener {
-            override fun onTick(segundosRestantes: Int) { tiempoRestante = segundosRestantes }
-            override fun onTiempoTerminado() { mensajeFinal = "⏰ ¡Tiempo terminado!" }
+            override fun onTick(segundosRestantes: Int) {
+                tiempoRestante = segundosRestantes
+                if (modoEquipo == false && segundosRestantes <= 0) {
+                    // jugador individual termina la partida si se acaba el tiempo
+                    finPartida = true
+                }
+            }
+            override fun onTiempoTerminado() {
+                if (modoEquipo == false) finPartida = true
+                else mensajeFinal = "⏰ ¡Tiempo terminado!"
+            }
             override fun onNuevaPalabra(palabra: String) { palabraActual = palabra }
             override fun onPuntajeActualizado(nuevoPuntaje: Int) { puntaje = nuevoPuntaje }
             override fun onTurnoCambiado(equipo: com.example.charadasud.modelo.Equipo) {
@@ -53,7 +62,7 @@ fun CharadasApp() {
                 ronda = juego.rondaActual
             }
             override fun onJuegoTerminado(ganadorEquipo: com.example.charadasud.modelo.Equipo?) {
-                ganador = if (ganadorEquipo == null) "Empate" else ganadorEquipo.nombre
+                finPartida = true
             }
         }
     }
@@ -80,6 +89,7 @@ fun CharadasApp() {
                 juego.iniciarTemporizador(60)
                 equipoTurno = juego.equipoActual?.nombre
                 ronda = juego.rondaActual
+                finPartida = false
                 pantalla = "juego"
             }
         )
@@ -91,11 +101,18 @@ fun CharadasApp() {
             equipoTurno = equipoTurno,
             ronda = ronda,
             mensajeFinal = mensajeFinal,
-            ganador = ganador,
+            finPartida = finPartida,
             esEquipos = modoEquipo == true,
-            onAdivinado = { juego.registrarAcierto() },
-            onNoAdivinado = { juego.pasarTurno() },
-
+            onAdivinado = {
+                juego.registrarAcierto()
+                if (modoEquipo == false && !finPartida) {
+                    juego.iniciarTemporizador(60)
+                }
+            },
+            onNoAdivinado = {
+                if (modoEquipo == true) juego.pasarTurno()
+                else finPartida = true
+            },
             onReiniciarJuego = {
                 juego.reiniciarJuegoCompleto()
                 juego.seleccionarCategoria(categoriaSeleccionada?.nombre ?: "")
@@ -107,24 +124,23 @@ fun CharadasApp() {
                 equipoTurno = juego.equipoActual?.nombre
                 ronda = juego.rondaActual
                 palabraActual = juego.palabraActual
-                ganador = null
+                finPartida = false
             },
-
             onCambiarCategoria = {
                 pantalla = "config"
-                ganador = null
+                finPartida = false
                 mensajeFinal = null
                 puntaje = 0
                 ronda = 1
+                juego.reiniciarJuegoCompleto()
             },
-
             onVolverMenu = {
                 juego.reiniciarJuegoCompleto()
                 pantalla = "menu"
                 categoriaSeleccionada = null
                 mensajeFinal = null
                 puntaje = 0
-                ganador = null
+                finPartida = false
                 ronda = 1
             }
         )
@@ -194,7 +210,7 @@ fun JuegoPantalla(
     equipoTurno: String?,
     ronda: Int,
     mensajeFinal: String?,
-    ganador: String?,
+    finPartida: Boolean,
     esEquipos: Boolean,
     onAdivinado: () -> Unit,
     onNoAdivinado: () -> Unit,
@@ -207,11 +223,12 @@ fun JuegoPantalla(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (ganador != null) {
-            // Pantalla de ganador / empate
+        if (finPartida) {
             Text(
-                "🏆 ${if (ganador == "Empate") "¡Empate!" else "Ganador: $ganador"}",
-                color = Color.Yellow, fontSize = 26.sp, fontWeight = FontWeight.Bold
+                text = if (esEquipos) "🏆 Fin de la partida" else "Puntaje alcanzado: $puntaje",
+                color = Color.Yellow,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(12.dp))
             Button(onClick = onReiniciarJuego, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
@@ -220,14 +237,10 @@ fun JuegoPantalla(
             return
         }
 
-        // Pantalla de juego normal
-        Text("Ronda: $ronda / 5", color = Color.White, fontSize = 20.sp)
-        Spacer(Modifier.height(12.dp))
+        if (esEquipos) Text("Ronda: $ronda / 5", color = Color.White, fontSize = 20.sp)
+        if (esEquipos) Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
 
-        if (esEquipos)
-            Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
-
         Text("Palabra:", color = Color.White, fontSize = 22.sp)
         Text(palabra ?: "", color = Color.Yellow, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         Text("⏱ Tiempo: $tiempo s", color = Color.White)
@@ -238,14 +251,16 @@ fun JuegoPantalla(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Adivinado ✅") }
+
             if (esEquipos)
                 Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Pasar Ronda ⏭") }
+            else
+                Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("No Adivinó ❌") }
 
             Spacer(Modifier.height(8.dp))
             Divider(color = Color.White, thickness = 1.dp)
             Spacer(Modifier.height(8.dp))
 
-            // Botones disponibles durante la partida
             Button(onClick = onReiniciarJuego, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
             Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al Menú 🔙") }
         }
