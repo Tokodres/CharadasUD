@@ -39,8 +39,8 @@ fun CharadasApp() {
     var puntaje by remember { mutableStateOf(0) }
     var equipoTurno by remember { mutableStateOf<String?>(null) }
     var ronda by remember { mutableStateOf(1) }
-    var ganador by remember { mutableStateOf<String?>(null) }
     var mensajeFinal by remember { mutableStateOf<String?>(null) }
+    var ganador by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         juego.listener = object : Game.JuegoListener {
@@ -53,13 +53,14 @@ fun CharadasApp() {
                 ronda = juego.rondaActual
             }
             override fun onJuegoTerminado(ganadorEquipo: com.example.charadasud.modelo.Equipo?) {
-                ganador = ganadorEquipo?.nombre
+                ganador = if (ganadorEquipo == null) "Empate" else ganadorEquipo.nombre
             }
         }
     }
 
     when (pantalla) {
         "menu" -> MenuPantalla(onSeleccionModo = { modoEquipo = it; pantalla = "config" })
+
         "config" -> ConfiguracionPantalla(
             modoEquipo,
             nombreJugador,
@@ -82,6 +83,7 @@ fun CharadasApp() {
                 pantalla = "juego"
             }
         )
+
         "juego" -> JuegoPantalla(
             palabra = palabraActual,
             tiempo = tiempoRestante,
@@ -93,14 +95,29 @@ fun CharadasApp() {
             esEquipos = modoEquipo == true,
             onAdivinado = { juego.registrarAcierto() },
             onNoAdivinado = { juego.pasarTurno() },
-            onReiniciarRonda = {
+
+            onReiniciarJuego = {
                 juego.reiniciarJuegoCompleto()
-                ganador = null
+                juego.seleccionarCategoria(categoriaSeleccionada?.nombre ?: "")
+                juego.palabraAleatoria()
+                juego.iniciarTemporizador(60)
+
                 mensajeFinal = null
                 puntaje = juego.equipoActual?.puntaje ?: 0
                 equipoTurno = juego.equipoActual?.nombre
                 ronda = juego.rondaActual
+                palabraActual = juego.palabraActual
+                ganador = null
             },
+
+            onCambiarCategoria = {
+                pantalla = "config"
+                ganador = null
+                mensajeFinal = null
+                puntaje = 0
+                ronda = 1
+            },
+
             onVolverMenu = {
                 juego.reiniciarJuegoCompleto()
                 pantalla = "menu"
@@ -181,7 +198,8 @@ fun JuegoPantalla(
     esEquipos: Boolean,
     onAdivinado: () -> Unit,
     onNoAdivinado: () -> Unit,
-    onReiniciarRonda: () -> Unit,
+    onReiniciarJuego: () -> Unit,
+    onCambiarCategoria: () -> Unit,
     onVolverMenu: () -> Unit
 ) {
     Column(
@@ -190,17 +208,24 @@ fun JuegoPantalla(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (ganador != null) {
-            Text("🏆 Ganador: $ganador", color = Color.Yellow, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            // Pantalla de ganador / empate
+            Text(
+                "🏆 ${if (ganador == "Empate") "¡Empate!" else "Ganador: $ganador"}",
+                color = Color.Yellow, fontSize = 26.sp, fontWeight = FontWeight.Bold
+            )
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onReiniciarRonda, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
+            Button(onClick = onReiniciarJuego, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
+            Button(onClick = onCambiarCategoria, modifier = Modifier.fillMaxWidth()) { Text("Cambiar Categoría 🎯") }
             Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al Menú 🔙") }
             return
         }
 
+        // Pantalla de juego normal
         Text("Ronda: $ronda / 5", color = Color.White, fontSize = 20.sp)
         Spacer(Modifier.height(12.dp))
 
-        if (esEquipos) Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        if (esEquipos)
+            Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
 
         Text("Palabra:", color = Color.White, fontSize = 22.sp)
@@ -213,12 +238,16 @@ fun JuegoPantalla(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Adivinado ✅") }
-
             if (esEquipos)
                 Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Pasar Ronda ⏭") }
 
-            Button(onClick = onReiniciarRonda, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Ronda 🔄") }
-            Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al menú 🔙") }
+            Spacer(Modifier.height(8.dp))
+            Divider(color = Color.White, thickness = 1.dp)
+            Spacer(Modifier.height(8.dp))
+
+            // Botones disponibles durante la partida
+            Button(onClick = onReiniciarJuego, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
+            Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al Menú 🔙") }
         }
     }
 }
