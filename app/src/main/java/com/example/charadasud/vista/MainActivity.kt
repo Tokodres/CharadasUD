@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,104 +42,81 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun CharadasApp() {
-    // Se recuerda una única instancia del controlador Game durante toda la ejecución
     val juego = remember { Game() }
 
-    // Variables de estado de la UI (se redibujan al cambiar)
-    var pantalla by remember { mutableStateOf("menu") } // Controla la pantalla actual: "menu", "config" o "juego"
-    var modoEquipo by remember { mutableStateOf<Boolean?>(null) } // true = modo equipos, false = jugador solo
-    var nombreJugador by remember { mutableStateOf("") } // Nombre en modo solitario
-    var nombreEquipoA by remember { mutableStateOf("") } // Nombre del equipo A
-    var nombreEquipoB by remember { mutableStateOf("") } // Nombre del equipo B
-    var categoriaSeleccionada by remember { mutableStateOf<Categoria?>(null) } // Categoría elegida del modelo
-    var mensajeFinal by remember { mutableStateOf<String?>(null) } // Mensaje de fin de ronda o tiempo
+    var pantalla by remember { mutableStateOf("menu") }
+    var modoEquipo by remember { mutableStateOf<Boolean?>(null) }
+    var nombreJugador by remember { mutableStateOf("") }
+    var nombreEquipoA by remember { mutableStateOf("") }
+    var nombreEquipoB by remember { mutableStateOf("") }
+    var categoriaSeleccionada by remember { mutableStateOf<Categoria?>(null) }
+    var mensajeFinal by remember { mutableStateOf<String?>(null) }
 
-    // Estados dinámicos del juego (se actualizan mediante el listener del controlador)
     var tiempoRestante by remember { mutableStateOf(60) }
     var palabraActual by remember { mutableStateOf<String?>(null) }
     var puntaje by remember { mutableStateOf(0) }
     var equipoTurno by remember { mutableStateOf<String?>(null) }
 
-    /**
-     * Configura un listener del controlador Game para recibir actualizaciones
-     * en tiempo real y reflejarlas en la interfaz de usuario.
-     */
     LaunchedEffect(Unit) {
         juego.listener = object : Game.JuegoListener {
-            // Actualiza el contador de tiempo en pantalla
             override fun onTick(segundosRestantes: Int) { tiempoRestante = segundosRestantes }
-
-            // Muestra un mensaje cuando el tiempo acaba
             override fun onTiempoTerminado() { mensajeFinal = "⏰ ¡Tiempo terminado!" }
-
-            // Muestra la nueva palabra seleccionada
             override fun onNuevaPalabra(palabra: String) { palabraActual = palabra }
-
-            // Actualiza el puntaje del jugador o equipo
             override fun onPuntajeActualizado(nuevoPuntaje: Int) { puntaje = nuevoPuntaje }
-
-            // Indica de quién es el turno en modo equipos
             override fun onTurnoCambiado(equipo: com.example.charadasud.modelo.Equipo) {
                 equipoTurno = equipo.nombre
             }
         }
     }
 
-    // Control de navegación entre pantallas según el estado "pantalla"
     when (pantalla) {
-        // Pantalla inicial del menú principal
         "menu" -> MenuPantalla(
-            onSeleccionModo = { modoEquipo = it; pantalla = "config" } // Pasa a configuración
+            onSeleccionModo = { modoEquipo = it; pantalla = "config" }
         )
 
-        // Pantalla de configuración del juego
         "config" -> ConfiguracionPantalla(
             modoEquipo,
             nombreJugador,
             nombreEquipoA,
             nombreEquipoB,
-            juego.categorias, // Se obtienen las categorías del modelo
+            juego.categorias,
             onNombreJugadorChange = { nombreJugador = it },
             onNombreEquipoAChange = { nombreEquipoA = it },
             onNombreEquipoBChange = { nombreEquipoB = it },
-
-            // Al seleccionar una categoría, se inicializa el juego desde el controlador
             onCategoriaSeleccionada = { cat ->
                 categoriaSeleccionada = cat
-
-                // Dependiendo del modo, se crean jugador o equipos
                 if (modoEquipo == false) {
                     juego.crearJugador(nombreJugador)
                 } else {
                     juego.crearEquipos(nombreEquipoA, nombreEquipoB)
                 }
-
-                // Se configura la categoría y se inicia el temporizador
                 juego.seleccionarCategoria(cat.nombre)
                 juego.palabraAleatoria()
                 juego.iniciarTemporizador(60)
-
-                // Se inicializa el turno actual (en modo equipos)
                 equipoTurno = juego.equipoActual?.nombre
-
-                // Se cambia la pantalla al modo de juego
                 pantalla = "juego"
             }
         )
 
-        // Pantalla principal del juego
         "juego" -> JuegoPantalla(
             palabraActual,
             tiempoRestante,
             puntaje,
             equipoTurno,
             mensajeFinal,
-            modoEquipo == true, // true si es equipos
-            onAdivinado = { juego.registrarAcierto() }, // Suma puntaje
-            onNoAdivinado = { juego.pasarTurno() }, // Cambia el turno
-            onReiniciarRonda = { juego.reiniciarRonda() }, // Reinicia ronda actual
+            modoEquipo == true,
+            onAdivinado = { juego.registrarAcierto() },
+            onNoAdivinado = { juego.pasarTurno() },
+
+            // 🔸 CORREGIDO: reinicia la ronda y sincroniza puntaje y turno
+            onReiniciarRonda = {
+                juego.reiniciarRonda()
+                mensajeFinal = null
+                puntaje = juego.equipoActual?.puntaje ?: 0
+                equipoTurno = juego.equipoActual?.nombre
+            },
+
             onVolverMenu = {
-                // Reinicia todo el juego y vuelve al menú principal
                 juego.reiniciarJuego()
                 pantalla = "menu"
                 categoriaSeleccionada = null
@@ -151,10 +127,6 @@ fun CharadasApp() {
     }
 }
 
-/**
- * MenuPantalla:
- * Muestra el menú inicial para seleccionar el modo de juego.
- */
 @Composable
 fun MenuPantalla(onSeleccionModo: (Boolean) -> Unit) {
     Column(
@@ -170,10 +142,6 @@ fun MenuPantalla(onSeleccionModo: (Boolean) -> Unit) {
     }
 }
 
-/**
- * ConfiguracionPantalla:
- * Permite ingresar los nombres del jugador o equipos y elegir una categoría.
- */
 @Composable
 fun ConfiguracionPantalla(
     modoEquipo: Boolean?,
@@ -194,11 +162,9 @@ fun ConfiguracionPantalla(
         Text("Configuración", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
 
-        // Si es modo individual, se pide solo el nombre del jugador
         if (modoEquipo == false) {
             OutlinedTextField(value = nombreJugador, onValueChange = onNombreJugadorChange, label = { Text("Nombre del jugador") })
         } else {
-            // Si es modo equipos, se piden los dos nombres
             OutlinedTextField(value = nombreEquipoA, onValueChange = onNombreEquipoAChange, label = { Text("Equipo A") })
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(value = nombreEquipoB, onValueChange = onNombreEquipoBChange, label = { Text("Equipo B") })
@@ -208,7 +174,6 @@ fun ConfiguracionPantalla(
         Text("Selecciona una categoría:", color = Color.White, fontSize = 18.sp)
         Spacer(Modifier.height(8.dp))
 
-        // Lista de botones con las categorías disponibles (vienen del modelo)
         categorias.forEach { cat ->
             Button(
                 onClick = { onCategoriaSeleccionada(cat) },
@@ -218,10 +183,6 @@ fun ConfiguracionPantalla(
     }
 }
 
-/**
- * JuegoPantalla:
- * Muestra la interfaz principal del juego durante la ronda.
- */
 @Composable
 fun JuegoPantalla(
     palabra: String?,
@@ -237,10 +198,9 @@ fun JuegoPantalla(
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFF2196F3)).padding(16.dp),
-        verticalArrangement = Arrangement.Center, // <- centrado vertical
+        verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Sección superior: información del turno y palabra
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (esEquipos) {
                 Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -253,12 +213,10 @@ fun JuegoPantalla(
             Text("Puntaje: $puntaje", color = Color.White, fontSize = 20.sp)
         }
 
-        // Mensaje de fin (solo si existe)
         mensajeFinal?.let {
             Text(it, color = Color.Yellow, fontSize = 20.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
 
-        // Sección inferior: botones de acción
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Adivinado ✅") }
             if (esEquipos) Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("No adivinó ❌") }

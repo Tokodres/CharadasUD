@@ -7,44 +7,28 @@ import com.example.charadasud.modelo.Temporizador
 import kotlin.random.Random
 
 /**
- * ---------------------------------------------------------------
- * CLASE: Game
- * ---------------------------------------------------------------
- * Controlador principal del juego de Charadas.
- *
- * Su función es manejar toda la lógica del juego:
- *  - Crear jugadores o equipos
- *  - Administrar categorías y palabras
- *  - Controlar el temporizador
- *  - Llevar el puntaje
- *  - Informar a la vista (MainActivity) de los cambios mediante un listener
- *
- * Esta clase NO maneja la interfaz gráfica (eso lo hace la vista).
- * ---------------------------------------------------------------
+ * Controlador principal del juego Charadas.
+ * Maneja jugadores/equipos, categorías, palabras, temporizador y puntajes.
  */
 class Game(
-    val jugadores: MutableList<Jugador> = mutableListOf(),   // Lista de jugadores individuales
-    val equipos: MutableList<Equipo> = mutableListOf(),      // Lista de equipos (modo por equipos)
-    val categorias: MutableList<Categoria> = mutableListOf(),// Lista de categorías disponibles
-    var equipoActual: Equipo? = null,                        // Equipo que está jugando actualmente
-    var categoriaActual: Categoria? = null,                  // Categoría actualmente seleccionada
-    var temporizador: Temporizador? = null,                  // Objeto temporizador del juego
-    var palabraActual: String? = null,                       // Palabra actual que se debe adivinar
-    var listener: JuegoListener? = null                      // Listener para comunicar eventos con la vista
+    val jugadores: MutableList<Jugador> = mutableListOf(),
+    val equipos: MutableList<Equipo> = mutableListOf(),
+    val categorias: MutableList<Categoria> = mutableListOf(),
+    var equipoActual: Equipo? = null,
+    var categoriaActual: Categoria? = null,
+    var temporizador: Temporizador? = null,
+    var palabraActual: String? = null,
+    var listener: JuegoListener? = null
 ) {
 
-    // -----------------------------------------------------------
-    // BLOQUE DE INICIALIZACIÓN
-    // -----------------------------------------------------------
+    // Mapa interno para puntajes individuales (usa referencia de objeto Jugador como clave).
+    // Es independiente de si la clase Jugador tiene o no una propiedad 'puntaje'.
+    private val playerScores: MutableMap<Jugador, Int> = mutableMapOf()
+
     init {
-        // Si no hay categorías definidas, se agregan unas por defecto.
         if (categorias.isEmpty()) inicializarCategoriasPorDefecto()
     }
 
-    /**
-     * Inicializa categorías predeterminadas del juego
-     * (solo se llama una vez al inicio si la lista está vacía).
-     */
     private fun inicializarCategoriasPorDefecto() {
         categorias.addAll(
             listOf(
@@ -55,145 +39,149 @@ class Game(
         )
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: MANEJO DE JUGADORES (Modo individual)
-    // -----------------------------------------------------------
-
-    /**
-     * Crea un nuevo jugador y lo agrega a la lista de jugadores.
-     * @param nombre Nombre del jugador
-     * @return El objeto Jugador creado
-     */
+    // -----------------------
+    // JUGADORES (modo individual)
+    // -----------------------
     fun crearJugador(nombre: String): Jugador {
         val jugador = Jugador(nombre)
         jugadores.add(jugador)
+        // Inicializa puntaje en el mapa si no existe
+        playerScores.putIfAbsent(jugador, 0)
+        // Notificar puntaje actual (útil si la UI espera un onPuntajeActualizado)
+        listener?.onPuntajeActualizado(playerScores[jugador] ?: 0)
         return jugador
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: MANEJO DE EQUIPOS (Modo por equipos)
-    // -----------------------------------------------------------
-
     /**
-     * Crea dos equipos con los nombres dados (o nombres genéricos si están vacíos).
-     * @param nombreA Nombre del primer equipo
-     * @param nombreB Nombre del segundo equipo
+     * Devuelve el puntaje del jugador (según el mapa interno).
+     * Retorna 0 si no se encuentra.
      */
+    fun obtenerPuntajeJugador(jugador: Jugador): Int = playerScores[jugador] ?: 0
+
+    // -----------------------
+    // EQUIPOS (modo por equipos)
+    // -----------------------
     fun crearEquipos(nombreA: String, nombreB: String) {
-        equipos.clear() // Limpia los equipos anteriores
+        equipos.clear()
         val equipo1 = Equipo(nombreA.ifBlank { "Equipo A" })
         val equipo2 = Equipo(nombreB.ifBlank { "Equipo B" })
         equipos.add(equipo1)
         equipos.add(equipo2)
-        equipoActual = equipos.firstOrNull() // Asigna turno inicial
+        equipoActual = equipos.firstOrNull()
+
+        // Notificar estado inicial al listener
+        listener?.onPuntajeActualizado(equipoActual?.puntaje ?: 0)
+        equipoActual?.let { listener?.onTurnoCambiado(it) }
     }
 
-    /**
-     * Cambia el turno entre los equipos.
-     * Si hay más de un equipo, pasa al siguiente de la lista.
-     */
     fun pasarTurno() {
         if (equipos.isEmpty()) return
-        // Encuentra el índice del equipo actual y pasa al siguiente (en bucle)
         val idx = equipos.indexOf(equipoActual).let { if (it < 0) 0 else it }
         equipoActual = equipos[(idx + 1) % equipos.size]
-        // Notifica a la vista que el turno cambió
-        listener?.onTurnoCambiado(equipoActual!!)
+
+        equipoActual?.let { listener?.onTurnoCambiado(it) }
+        listener?.onPuntajeActualizado(equipoActual?.puntaje ?: 0)
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: MANEJO DE CATEGORÍAS Y PALABRAS
-    // -----------------------------------------------------------
-
-    /**
-     * Selecciona una categoría por su nombre (ignora mayúsculas/minúsculas).
-     * Si no se encuentra, lanza una excepción.
-     */
+    // -----------------------
+    // CATEGORÍAS Y PALABRAS
+    // -----------------------
     fun seleccionarCategoria(nombre: String) {
         categoriaActual = categorias.find { it.nombre.equals(nombre, ignoreCase = true) }
             ?: throw IllegalArgumentException("Categoría no encontrada")
     }
 
-    /**
-     * Escoge una palabra aleatoria de la categoría actual
-     * y notifica a la vista que se debe mostrar.
-     */
     fun palabraAleatoria() {
         val cat = categoriaActual ?: return
         palabraActual = cat.palabras.random()
         listener?.onNuevaPalabra(palabraActual!!)
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: MANEJO DE PUNTAJE
-    // -----------------------------------------------------------
-
+    // -----------------------
+    // PUNTAJE: Aciertos
+    // -----------------------
     /**
-     * Registra un acierto del equipo actual:
-     * - Incrementa el puntaje del equipo
-     * - Notifica el nuevo puntaje
-     * - Cambia la palabra
+     * Registra un acierto:
+     * - Si hay equipo en turno -> incrementa equipo.puntaje y notifica
+     * - Si no hay equipos pero hay jugadores -> incrementa puntaje del primer jugador (modo individual)
      */
     fun registrarAcierto() {
-        equipoActual?.let {
-            it.puntaje++ // Suma un punto
-            listener?.onPuntajeActualizado(it.puntaje)
-            palabraAleatoria() // Genera nueva palabra
+        // Prioriza modo por equipos si existe equipoActual
+        equipoActual?.let { equipo ->
+            equipo.puntaje++
+            listener?.onPuntajeActualizado(equipo.puntaje)
+            palabraAleatoria()
+            return
         }
+
+        // Modo individual: si hay jugadores, asigna al primer jugador (habitualmente el único)
+        if (jugadores.isNotEmpty()) {
+            val jugador = jugadores.first()
+            val nuevo = (playerScores[jugador] ?: 0) + 1
+            playerScores[jugador] = nuevo
+            listener?.onPuntajeActualizado(nuevo)
+            palabraAleatoria()
+            return
+        }
+
+        // Si no hay jugadores ni equipos: no hay lugar donde sumar puntaje
+        // (opcional: podrías notificar / loggear)
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: TEMPORIZADOR
-    // -----------------------------------------------------------
-
-    /**
-     * Inicia el temporizador del juego.
-     * @param segundos Duración del temporizador (por defecto 60 s)
-     */
+    // -----------------------
+    // TEMPORIZADOR
+    // -----------------------
     fun iniciarTemporizador(segundos: Int = 60) {
-        temporizador?.cancel() // Cancela el anterior si estaba corriendo
+        temporizador?.cancel()
         temporizador = Temporizador(segundos)
         temporizador?.start(
-            1000L, // Intervalo de 1 segundo
-            { listener?.onTick(it) },          // Actualiza segundos restantes
-            { listener?.onTiempoTerminado() }  // Llama al terminar el tiempo
+            1000L,
+            { segundosRestantes -> listener?.onTick(segundosRestantes) },
+            { listener?.onTiempoTerminado() }
         )
     }
 
     /**
-     * Reinicia la ronda (nueva palabra + reinicia tiempo).
+     * Reinicia la ronda (nueva palabra + reinicia tiempo) y notifica la UI.
+     * NOTA: no resetea puntajes.
      */
     fun reiniciarRonda() {
         palabraAleatoria()
         iniciarTemporizador(60)
+
+        // Notificar puntaje actual (si estamos en equipos, usar equipoActual; si individual, usar primer jugador)
+        val score = equipoActual?.puntaje ?: (jugadores.firstOrNull()?.let { playerScores[it] ?: 0 } ?: 0)
+        listener?.onPuntajeActualizado(score)
+
+        equipoActual?.let { listener?.onTurnoCambiado(it) }
     }
 
     /**
      * Reinicia completamente el juego:
-     * - Restablece los puntajes
-     * - Limpia la palabra actual
-     * - Devuelve el turno al primer equipo
+     * - Resetea puntajes de equipos y jugadores
+     * - Limpia palabra actual y establece turno al primer equipo (si existe)
      */
     fun reiniciarJuego() {
         equipos.forEach { it.puntaje = 0 }
+        playerScores.keys.forEach { playerScores[it] = 0 }
+
         palabraActual = null
         equipoActual = equipos.firstOrNull()
+
+        // Notificar cambios para que la UI se sincronice
+        listener?.onPuntajeActualizado(equipoActual?.puntaje ?: (jugadores.firstOrNull()?.let { playerScores[it] ?: 0 } ?: 0))
+        equipoActual?.let { listener?.onTurnoCambiado(it) }
+        // Si quieres también notificar palabra nula, podrías definir un callback adicional.
     }
 
-    // -----------------------------------------------------------
-    // SECCIÓN: LISTENER DE EVENTOS (Comunicación con la vista)
-    // -----------------------------------------------------------
-
-    /**
-     * Interfaz que define los eventos que la vista debe escuchar.
-     * La vista (MainActivity) implementa este listener para reaccionar
-     * a los cambios en el juego en tiempo real.
-     */
+    // -----------------------
+    // INTERFAZ DEL LISTENER
+    // -----------------------
     interface JuegoListener {
-        fun onTick(segundosRestantes: Int)                // Llamado cada segundo
-        fun onTiempoTerminado()                           // Llamado al terminar el tiempo
-        fun onNuevaPalabra(palabra: String)               // Llamado cuando hay una palabra nueva
-        fun onPuntajeActualizado(nuevoPuntaje: Int)       // Llamado cuando cambia el puntaje
-        fun onTurnoCambiado(equipo: Equipo)               // Llamado cuando se cambia de equipo
+        fun onTick(segundosRestantes: Int)
+        fun onTiempoTerminado()
+        fun onNuevaPalabra(palabra: String)
+        fun onPuntajeActualizado(nuevoPuntaje: Int)
+        fun onTurnoCambiado(equipo: Equipo)
     }
 }
