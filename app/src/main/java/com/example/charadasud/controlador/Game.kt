@@ -4,12 +4,7 @@ import com.example.charadasud.modelo.Categoria
 import com.example.charadasud.modelo.Equipo
 import com.example.charadasud.modelo.Jugador
 import com.example.charadasud.modelo.Temporizador
-import kotlin.random.Random
 
-/**
- * Controlador principal del juego Charadas.
- * Maneja jugadores/equipos, categorías, palabras, temporizador y puntajes.
- */
 class Game(
     val jugadores: MutableList<Jugador> = mutableListOf(),
     val equipos: MutableList<Equipo> = mutableListOf(),
@@ -18,11 +13,11 @@ class Game(
     var categoriaActual: Categoria? = null,
     var temporizador: Temporizador? = null,
     var palabraActual: String? = null,
+    var rondaActual: Int = 1,
+    val totalRondas: Int = 5,
     var listener: JuegoListener? = null
 ) {
 
-    // Mapa interno para puntajes individuales (usa referencia de objeto Jugador como clave).
-    // Es independiente de si la clase Jugador tiene o no una propiedad 'puntaje'.
     private val playerScores: MutableMap<Jugador, Int> = mutableMapOf()
 
     init {
@@ -45,17 +40,11 @@ class Game(
     fun crearJugador(nombre: String): Jugador {
         val jugador = Jugador(nombre)
         jugadores.add(jugador)
-        // Inicializa puntaje en el mapa si no existe
         playerScores.putIfAbsent(jugador, 0)
-        // Notificar puntaje actual (útil si la UI espera un onPuntajeActualizado)
         listener?.onPuntajeActualizado(playerScores[jugador] ?: 0)
         return jugador
     }
 
-    /**
-     * Devuelve el puntaje del jugador (según el mapa interno).
-     * Retorna 0 si no se encuentra.
-     */
     fun obtenerPuntajeJugador(jugador: Jugador): Int = playerScores[jugador] ?: 0
 
     // -----------------------
@@ -69,18 +58,29 @@ class Game(
         equipos.add(equipo2)
         equipoActual = equipos.firstOrNull()
 
-        // Notificar estado inicial al listener
         listener?.onPuntajeActualizado(equipoActual?.puntaje ?: 0)
         equipoActual?.let { listener?.onTurnoCambiado(it) }
     }
 
     fun pasarTurno() {
         if (equipos.isEmpty()) return
+
         val idx = equipos.indexOf(equipoActual).let { if (it < 0) 0 else it }
         equipoActual = equipos[(idx + 1) % equipos.size]
 
+        // Aumenta ronda cuando vuelva al primer equipo
+        if (idx + 1 >= equipos.size) rondaActual++
+
+        // Comprobar si se terminó el juego
+        if (rondaActual > totalRondas) {
+            val ganador = equipos.maxByOrNull { it.puntaje }
+            listener?.onJuegoTerminado(ganador)
+            return
+        }
+
         equipoActual?.let { listener?.onTurnoCambiado(it) }
         listener?.onPuntajeActualizado(equipoActual?.puntaje ?: 0)
+        reiniciarRonda()
     }
 
     // -----------------------
@@ -98,15 +98,9 @@ class Game(
     }
 
     // -----------------------
-    // PUNTAJE: Aciertos
+    // PUNTAJE
     // -----------------------
-    /**
-     * Registra un acierto:
-     * - Si hay equipo en turno -> incrementa equipo.puntaje y notifica
-     * - Si no hay equipos pero hay jugadores -> incrementa puntaje del primer jugador (modo individual)
-     */
     fun registrarAcierto() {
-        // Prioriza modo por equipos si existe equipoActual
         equipoActual?.let { equipo ->
             equipo.puntaje++
             listener?.onPuntajeActualizado(equipo.puntaje)
@@ -114,18 +108,13 @@ class Game(
             return
         }
 
-        // Modo individual: si hay jugadores, asigna al primer jugador (habitualmente el único)
         if (jugadores.isNotEmpty()) {
             val jugador = jugadores.first()
             val nuevo = (playerScores[jugador] ?: 0) + 1
             playerScores[jugador] = nuevo
             listener?.onPuntajeActualizado(nuevo)
             palabraAleatoria()
-            return
         }
-
-        // Si no hay jugadores ni equipos: no hay lugar donde sumar puntaje
-        // (opcional: podrías notificar / loggear)
     }
 
     // -----------------------
@@ -141,41 +130,26 @@ class Game(
         )
     }
 
-    /**
-     * Reinicia la ronda (nueva palabra + reinicia tiempo) y notifica la UI.
-     * NOTA: no resetea puntajes.
-     */
     fun reiniciarRonda() {
         palabraAleatoria()
         iniciarTemporizador(60)
-
-        // Notificar puntaje actual (si estamos en equipos, usar equipoActual; si individual, usar primer jugador)
         val score = equipoActual?.puntaje ?: (jugadores.firstOrNull()?.let { playerScores[it] ?: 0 } ?: 0)
         listener?.onPuntajeActualizado(score)
-
         equipoActual?.let { listener?.onTurnoCambiado(it) }
     }
 
-    /**
-     * Reinicia completamente el juego:
-     * - Resetea puntajes de equipos y jugadores
-     * - Limpia palabra actual y establece turno al primer equipo (si existe)
-     */
-    fun reiniciarJuego() {
+    fun reiniciarJuegoCompleto() {
         equipos.forEach { it.puntaje = 0 }
         playerScores.keys.forEach { playerScores[it] = 0 }
-
+        rondaActual = 1
         palabraActual = null
         equipoActual = equipos.firstOrNull()
-
-        // Notificar cambios para que la UI se sincronice
-        listener?.onPuntajeActualizado(equipoActual?.puntaje ?: (jugadores.firstOrNull()?.let { playerScores[it] ?: 0 } ?: 0))
+        listener?.onPuntajeActualizado(equipoActual?.puntaje ?: 0)
         equipoActual?.let { listener?.onTurnoCambiado(it) }
-        // Si quieres también notificar palabra nula, podrías definir un callback adicional.
     }
 
     // -----------------------
-    // INTERFAZ DEL LISTENER
+    // LISTENER
     // -----------------------
     interface JuegoListener {
         fun onTick(segundosRestantes: Int)
@@ -183,5 +157,6 @@ class Game(
         fun onNuevaPalabra(palabra: String)
         fun onPuntajeActualizado(nuevoPuntaje: Int)
         fun onTurnoCambiado(equipo: Equipo)
+        fun onJuegoTerminado(ganador: Equipo?)
     }
 }

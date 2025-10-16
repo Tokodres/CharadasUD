@@ -1,6 +1,5 @@
 package com.example.charadasud.vista
 
-// Importaciones necesarias para Jetpack Compose y Android
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,29 +16,13 @@ import androidx.compose.ui.unit.sp
 import com.example.charadasud.controlador.Game
 import com.example.charadasud.modelo.Categoria
 
-/**
- * MainActivity:
- * Vista principal del juego Charadas.
- * Su única responsabilidad es manejar la interfaz de usuario (UI)
- * y comunicarse con el controlador (Game.kt), quien tiene la lógica del juego.
- */
 class MainActivity : ComponentActivity() {
-    // Método que se ejecuta al crear la actividad principal
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Define que el contenido de la pantalla usará Jetpack Compose
-        setContent {
-            CharadasApp() // Llama a la función composable principal
-        }
+        setContent { CharadasApp() }
     }
 }
 
-/**
- * CharadasApp:
- * Función principal que contiene el flujo completo del juego.
- * Aquí se decide qué pantalla mostrar (menú, configuración o juego)
- * y se manejan los estados principales de la interfaz.
- */
 @Composable
 fun CharadasApp() {
     val juego = remember { Game() }
@@ -50,12 +33,14 @@ fun CharadasApp() {
     var nombreEquipoA by remember { mutableStateOf("") }
     var nombreEquipoB by remember { mutableStateOf("") }
     var categoriaSeleccionada by remember { mutableStateOf<Categoria?>(null) }
-    var mensajeFinal by remember { mutableStateOf<String?>(null) }
 
     var tiempoRestante by remember { mutableStateOf(60) }
     var palabraActual by remember { mutableStateOf<String?>(null) }
     var puntaje by remember { mutableStateOf(0) }
     var equipoTurno by remember { mutableStateOf<String?>(null) }
+    var ronda by remember { mutableStateOf(1) }
+    var ganador by remember { mutableStateOf<String?>(null) }
+    var mensajeFinal by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         juego.listener = object : Game.JuegoListener {
@@ -65,15 +50,16 @@ fun CharadasApp() {
             override fun onPuntajeActualizado(nuevoPuntaje: Int) { puntaje = nuevoPuntaje }
             override fun onTurnoCambiado(equipo: com.example.charadasud.modelo.Equipo) {
                 equipoTurno = equipo.nombre
+                ronda = juego.rondaActual
+            }
+            override fun onJuegoTerminado(ganadorEquipo: com.example.charadasud.modelo.Equipo?) {
+                ganador = ganadorEquipo?.nombre
             }
         }
     }
 
     when (pantalla) {
-        "menu" -> MenuPantalla(
-            onSeleccionModo = { modoEquipo = it; pantalla = "config" }
-        )
-
+        "menu" -> MenuPantalla(onSeleccionModo = { modoEquipo = it; pantalla = "config" })
         "config" -> ConfiguracionPantalla(
             modoEquipo,
             nombreJugador,
@@ -85,43 +71,44 @@ fun CharadasApp() {
             onNombreEquipoBChange = { nombreEquipoB = it },
             onCategoriaSeleccionada = { cat ->
                 categoriaSeleccionada = cat
-                if (modoEquipo == false) {
-                    juego.crearJugador(nombreJugador)
-                } else {
-                    juego.crearEquipos(nombreEquipoA, nombreEquipoB)
-                }
+                if (modoEquipo == false) juego.crearJugador(nombreJugador)
+                else juego.crearEquipos(nombreEquipoA, nombreEquipoB)
+
                 juego.seleccionarCategoria(cat.nombre)
                 juego.palabraAleatoria()
                 juego.iniciarTemporizador(60)
                 equipoTurno = juego.equipoActual?.nombre
+                ronda = juego.rondaActual
                 pantalla = "juego"
             }
         )
-
         "juego" -> JuegoPantalla(
-            palabraActual,
-            tiempoRestante,
-            puntaje,
-            equipoTurno,
-            mensajeFinal,
-            modoEquipo == true,
+            palabra = palabraActual,
+            tiempo = tiempoRestante,
+            puntaje = puntaje,
+            equipoTurno = equipoTurno,
+            ronda = ronda,
+            mensajeFinal = mensajeFinal,
+            ganador = ganador,
+            esEquipos = modoEquipo == true,
             onAdivinado = { juego.registrarAcierto() },
             onNoAdivinado = { juego.pasarTurno() },
-
-            // 🔸 CORREGIDO: reinicia la ronda y sincroniza puntaje y turno
             onReiniciarRonda = {
-                juego.reiniciarRonda()
+                juego.reiniciarJuegoCompleto()
+                ganador = null
                 mensajeFinal = null
                 puntaje = juego.equipoActual?.puntaje ?: 0
                 equipoTurno = juego.equipoActual?.nombre
+                ronda = juego.rondaActual
             },
-
             onVolverMenu = {
-                juego.reiniciarJuego()
+                juego.reiniciarJuegoCompleto()
                 pantalla = "menu"
                 categoriaSeleccionada = null
                 mensajeFinal = null
                 puntaje = 0
+                ganador = null
+                ronda = 1
             }
         )
     }
@@ -162,9 +149,9 @@ fun ConfiguracionPantalla(
         Text("Configuración", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
 
-        if (modoEquipo == false) {
+        if (modoEquipo == false)
             OutlinedTextField(value = nombreJugador, onValueChange = onNombreJugadorChange, label = { Text("Nombre del jugador") })
-        } else {
+        else {
             OutlinedTextField(value = nombreEquipoA, onValueChange = onNombreEquipoAChange, label = { Text("Equipo A") })
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(value = nombreEquipoB, onValueChange = onNombreEquipoBChange, label = { Text("Equipo B") })
@@ -175,10 +162,9 @@ fun ConfiguracionPantalla(
         Spacer(Modifier.height(8.dp))
 
         categorias.forEach { cat ->
-            Button(
-                onClick = { onCategoriaSeleccionada(cat) },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-            ) { Text(cat.nombre) }
+            Button(onClick = { onCategoriaSeleccionada(cat) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text(cat.nombre)
+            }
         }
     }
 }
@@ -189,7 +175,9 @@ fun JuegoPantalla(
     tiempo: Int,
     puntaje: Int,
     equipoTurno: String?,
+    ronda: Int,
     mensajeFinal: String?,
+    ganador: String?,
     esEquipos: Boolean,
     onAdivinado: () -> Unit,
     onNoAdivinado: () -> Unit,
@@ -201,25 +189,34 @@ fun JuegoPantalla(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (esEquipos) {
-                Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(12.dp))
-            }
-            Text("Palabra:", color = Color.White, fontSize = 22.sp)
-            Text(palabra ?: "", color = Color.Yellow, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
-            Text("⏱ Tiempo: $tiempo s", color = Color.White)
+        if (ganador != null) {
+            Text("🏆 Ganador: $ganador", color = Color.Yellow, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
-            Text("Puntaje: $puntaje", color = Color.White, fontSize = 20.sp)
+            Button(onClick = onReiniciarRonda, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Juego 🔄") }
+            Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al Menú 🔙") }
+            return
         }
 
-        mensajeFinal?.let {
-            Text(it, color = Color.Yellow, fontSize = 20.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-        }
+        Text("Ronda: $ronda / 5", color = Color.White, fontSize = 20.sp)
+        Spacer(Modifier.height(12.dp))
+
+        if (esEquipos) Text("Turno de: ${equipoTurno ?: ""}", color = Color.Yellow, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+
+        Text("Palabra:", color = Color.White, fontSize = 22.sp)
+        Text(palabra ?: "", color = Color.Yellow, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+        Text("⏱ Tiempo: $tiempo s", color = Color.White)
+        Spacer(Modifier.height(12.dp))
+        Text("Puntaje: $puntaje", color = Color.White, fontSize = 20.sp)
+
+        mensajeFinal?.let { Text(it, color = Color.Yellow, fontSize = 20.sp) }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Adivinado ✅") }
-            if (esEquipos) Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("No adivinó ❌") }
+
+            if (esEquipos)
+                Button(onClick = onNoAdivinado, modifier = Modifier.fillMaxWidth()) { Text("Pasar Ronda ⏭") }
+
             Button(onClick = onReiniciarRonda, modifier = Modifier.fillMaxWidth()) { Text("Reiniciar Ronda 🔄") }
             Button(onClick = onVolverMenu, modifier = Modifier.fillMaxWidth()) { Text("Volver al menú 🔙") }
         }
